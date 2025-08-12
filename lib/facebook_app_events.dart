@@ -290,8 +290,9 @@ class FacebookAppEvents {
     );
   }
 
-  /// Sets the Advert Tracking propeety for iOS advert tracking
-  /// an iOS 14+ feature, android should just return a success.
+  /// Sets the Advert Tracking property for iOS advert tracking
+  /// KIDS APP COMPLIANCE: Controls both Facebook SDK and Audience Network
+  /// an iOS 14+ feature, android provides debug logging capability.
   Future<void> setAdvertiserTracking({
     required bool enabled,
     bool collectId = true,
