@@ -16,7 +16,11 @@ import io.flutter.plugin.common.MethodChannel.Result
 import java.util.Currency
 import com.facebook.LoggingBehavior
 
-/** FacebookAppEventsPlugin */
+/** 
+ * FacebookAppEventsPlugin - Modern Flutter Plugin API
+ * Compatible with Flutter 2.0+ using FlutterPlugin interface
+ * Removed deprecated PluginRegistry.Registrar API usage
+ */
 class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
   /// The MethodChannel that will the communication between Flutter and native Android
   ///

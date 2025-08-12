@@ -1,3 +1,9 @@
+## 0.20.2
+Fix Flutter compatibility issues
+- Remove any deprecated Flutter plugin registration APIs
+- Ensure compatibility with latest Flutter versions
+- Clean up Android Kotlin compilation for modern Flutter toolchain
+
 ## 0.20.1
 Updating example app 
 
