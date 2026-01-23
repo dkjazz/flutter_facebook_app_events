@@ -5,31 +5,14 @@ on:
       - "v[0-9]+.[0-9]+.[0-9]+*"
 
 jobs:
-  build_example:
-    name: Build Example App
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
-    strategy:
-      fail-fast: true
-      matrix:
-        platform:
-          - apk
-          - ios
-        os:
-          - ubuntu-latest
-          - macos-latest
-        exclude:
-          # Skip build combinations where Android is attempted to build on MacOS
-          # and iOS attempt to build on Ubuntu.
-          - os: macos-latest
-            platform: apk
-          - os: ubuntu-latest
-            platform: ios
-
-          # TODO(Dennis): iOS builds aren't properly configured yet. Fix and
-          # uncomment this exclusion
-          # https://github.com/oddbit/flutter_facebook_app_events/actions/runs/3365684172/jobs/5581387481
-          - platform: ios
+  test:
+    name: Test (root + example)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      CI: true
 
     steps:
       - uses: actions/checkout@v4
@@ -37,48 +20,101 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: "stable"
+          channel: stable
           cache: true
 
       - run: flutter --version
 
-      - run: flutter pub get
+      - name: Flutter pub get (root)
+        run: flutter pub get
 
-      - name: Configure iOS build environment
-        if: matrix.platform == 'ios'
-        run: |
-          echo "FLUTTER_EXTRA_PARAMS=--no-codesign" >> $GITHUB_ENV
+      - name: Flutter test (root)
+        run: flutter test
 
-      - name: Activate iOS Pods Cache
-        uses: actions/cache@v4
-        if: matrix.platform == 'ios'
+      - name: Flutter pub get (example)
+        working-directory: example
+        run: flutter pub get
+
+      - name: Flutter test (example)
+        working-directory: example
+        run: flutter test
+
+  verify:
+    name: Verify (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ matrix.timeout }}
+    needs: [test]
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: android
+            os: ubuntu-latest
+            timeout: 45
+          - target: ios
+            os: macos-latest
+            timeout: 60
+    env:
+      CI: true
+      GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.vfs.watch=false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        if: matrix.target == 'android'
+        uses: actions/setup-java@v4
         with:
-          path: example/ios/Pods
-          key: ${{ runner.os }}-pods-${{ hashFiles('ios/Podfile.lock') }}
-          restore-keys: ${{ runner.os }}-pods-
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
 
-      - run: flutter doctor
+      - name: Set up Android SDK
+        if: matrix.target == 'android'
+        uses: android-actions/setup-android@v3
 
-      - name: Build Flutter
-        working-directory: ./example
-        run: >-
-          flutter
-          build ${{ matrix.platform }}
-          ${{ env.FLUTTER_EXTRA_PARAMS }}
-
-      - name: Build iOS IPA with Fastlane
-        if: matrix.platform == 'ios'
-        uses: maierj/fastlane-action@v2.0.1
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
         with:
-          lane: ${{ env.FASTLANE_BUILD_LANE }}
-          subdirectory: "ios"
+          channel: stable
+          cache: true
+
+      - run: flutter --version
+
+      - name: Install CocoaPods
+        if: matrix.target == 'ios'
+        run: sudo gem install cocoapods -N
+
+      - name: Flutter pub get (root)
+        run: flutter pub get
+
+      - name: Flutter pub get (example)
+        working-directory: example
+        run: flutter pub get
+
+      - name: Flutter clean (example)
+        working-directory: example
+        run: flutter clean
+
+      - name: Build example APK (debug, verbose)
+        if: matrix.target == 'android'
+        working-directory: example
+        run: flutter build apk --debug -v
+
+      - name: Build example iOS (no-codesign, verbose)
+        if: matrix.target == 'ios'
+        working-directory: example
+        run: flutter build ios --no-codesign -v
 
   publish:
     name: Publish Plugin
     runs-on: ubuntu-latest
+    needs: [verify]
     permissions:
+      contents: read
       id-token: write
-    needs: build_example
     steps:
       - uses: actions/checkout@v4
 

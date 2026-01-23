@@ -4,10 +4,13 @@ import FBSDKCoreKit
 import FBSDKCoreKit_Basics
 import FBAudienceNetwork
 
-public class SwiftFacebookAppEventsPlugin: NSObject, FlutterPlugin {
+public class FacebookAppEventsPlugin: NSObject, FlutterPlugin {
     public static func register(with registrar: FlutterPluginRegistrar) {
-        let channel = FlutterMethodChannel(name: "flutter.oddbit.id/facebook_app_events", binaryMessenger: registrar.messenger())
-        let instance = SwiftFacebookAppEventsPlugin()
+        let channel = FlutterMethodChannel(
+            name: "flutter.oddbit.id/facebook_app_events",
+            binaryMessenger: registrar.messenger()
+        )
+        let instance = FacebookAppEventsPlugin()
 
         // Required for FB SDK 9.0, as it does not initialize the SDK automatically any more.
         // See: https://developers.facebook.com/blog/post/2021/01/19/introducing-facebook-platform-sdk-version-9/
@@ -17,70 +20,61 @@ public class SwiftFacebookAppEventsPlugin: NSObject, FlutterPlugin {
         registrar.addMethodCallDelegate(instance, channel: channel)
         registrar.addApplicationDelegate(instance)
     }
-    
+
     /// Connect app delegate with SDK
-    public func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [AnyHashable : Any] = [:]) -> Bool {
-        var options = [UIApplication.LaunchOptionsKey: Any]()
-        for (k, value) in launchOptions {
-            let key = k as! UIApplication.LaunchOptionsKey
-            options[key] = value
-        }
-        ApplicationDelegate.shared.application(application,didFinishLaunchingWithOptions: options)
-        return true
-    }
-    
-    public func application( _ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey : Any] = [:] ) -> Bool {
-        let processed = ApplicationDelegate.shared.application(
-            app, open: url,
-            sourceApplication: options[UIApplication.OpenURLOptionsKey.sourceApplication] as? String,
-            annotation: options[UIApplication.OpenURLOptionsKey.annotation])
-        return processed;
+    public func application(
+        _ app: UIApplication,
+        open url: URL,
+        options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+    ) -> Bool {
+        // For Facebook SDK 18.x+, use the simplified URL handling
+        return ApplicationDelegate.shared.application(app, open: url, options: options)
     }
 
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         switch call.method {
+        case "activateApp":
+            handleActivateApp(call, result: result)
         case "clearUserData":
             handleClearUserData(call, result: result)
-            break
         case "setUserData":
             handleSetUserData(call, result: result)
-            break
         case "clearUserID":
             handleClearUserID(call, result: result)
-            break
         case "flush":
             handleFlush(call, result: result)
-            break
         case "getApplicationId":
             handleGetApplicationId(call, result: result)
-            break
         case "logEvent":
             handleLogEvent(call, result: result)
-            break
         case "logPushNotificationOpen":
             handlePushNotificationOpen(call, result: result)
-            break
         case "setUserID":
             handleSetUserId(call, result: result)
-            break
         case "setAutoLogAppEventsEnabled":
             handleSetAutoLogAppEventsEnabled(call, result: result)
-            break
         case "setDataProcessingOptions":
             handleSetDataProcessingOptions(call, result: result)
-            break
         case "logPurchase":
             handlePurchased(call, result: result)
-            break
         case "getAnonymousId":
             handleHandleGetAnonymousId(call, result: result)
-            break
         case "setAdvertiserTracking":
             handleSetAdvertiserTracking(call, result: result)
-            break
         default:
             result(FlutterMethodNotImplemented)
         }
+    }
+
+    private func handleActivateApp(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        let arguments = call.arguments as? [String: Any] ?? [:]
+
+        if let applicationId = arguments["applicationId"] as? String, !applicationId.isEmpty {
+            AppEvents.shared.loggingOverrideAppID = applicationId
+        }
+
+        AppEvents.shared.activateApp()
+        result(nil)
     }
 
     private func handleClearUserData(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -88,8 +82,8 @@ public class SwiftFacebookAppEventsPlugin: NSObject, FlutterPlugin {
         result(nil)
     }
 
-    private func handleSetUserData(_ call: FlutterMethodCall, result: @escaping FlutterResult) {        
-        let arguments = call.arguments as? [String: Any] ?? [String: Any]()
+    private func handleSetUserData(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        let arguments = call.arguments as? [String: Any] ?? [:]
 
         AppEvents.shared.setUserData(arguments["email"] as? String, forType: FBSDKAppEventUserDataType.email)
         AppEvents.shared.setUserData(arguments["firstName"] as? String, forType: FBSDKAppEventUserDataType.firstName)
@@ -116,7 +110,10 @@ public class SwiftFacebookAppEventsPlugin: NSObject, FlutterPlugin {
     }
 
     private func handleGetApplicationId(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-        result(Settings.shared.appID)
+        // Facebook SDK 18.x+: appID property was removed from Settings
+        // Retrieve from Info.plist FacebookAppID key as fallback
+        let appId = Bundle.main.object(forInfoDictionaryKey: "FacebookAppID") as? String
+        result(appId)
     }
 
     private func handleHandleGetAnonymousId(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -124,12 +121,21 @@ public class SwiftFacebookAppEventsPlugin: NSObject, FlutterPlugin {
     }
 
     private func handleLogEvent(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-        let arguments = call.arguments as? [String: Any] ?? [String: Any]()
-        let eventName = arguments["name"] as! String
-        let parameters = arguments["parameters"] as? [AppEvents.ParameterName: Any] ?? [AppEvents.ParameterName: Any]()
-        if arguments["_valueToSum"] != nil && !(arguments["_valueToSum"] is NSNull) {
-            let valueToDouble = arguments["_valueToSum"] as! Double
-            AppEvents.shared.logEvent(AppEvents.Name(eventName), valueToSum: valueToDouble, parameters: parameters)
+        let arguments = call.arguments as? [String: Any] ?? [:]
+        guard let eventName = arguments["name"] as? String else {
+            result(FlutterError(code: "INVALID_ARGUMENT", message: "Event name is required and cannot be null.", details: nil))
+            return
+        }
+
+        let rawParams = arguments["parameters"] as? [String: Any] ?? [:]
+        let parameters: [AppEvents.ParameterName: Any] = Dictionary(
+            uniqueKeysWithValues: rawParams.map { key, value in
+                (AppEvents.ParameterName(key), value)
+            }
+        )
+
+        if let valueToSum = arguments["_valueToSum"] as? Double {
+            AppEvents.shared.logEvent(AppEvents.Name(eventName), valueToSum: valueToSum, parameters: parameters)
         } else {
             AppEvents.shared.logEvent(AppEvents.Name(eventName), parameters: parameters)
         }
@@ -138,58 +144,73 @@ public class SwiftFacebookAppEventsPlugin: NSObject, FlutterPlugin {
     }
 
     private func handlePushNotificationOpen(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-        let arguments = call.arguments as? [String: Any] ?? [String: Any]()
-        let payload = arguments["payload"] as? [String: Any]
+        let arguments = call.arguments as? [String: Any] ?? [:]
+        guard let payload = arguments["payload"] as? [String: Any] else {
+            result(FlutterError(code: "INVALID_ARGUMENT", message: "Payload is required", details: nil))
+            return
+        }
+
         if let action = arguments["action"] as? String {
-            AppEvents.shared.logPushNotificationOpen(payload: payload!, action: action)
+            AppEvents.shared.logPushNotificationOpen(payload: payload, action: action)
         } else {
-            AppEvents.shared.logPushNotificationOpen(payload: payload!)
+            AppEvents.shared.logPushNotificationOpen(payload: payload)
         }
         result(nil)
     }
 
     private func handleSetUserId(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-        let id = call.arguments as! String
+        guard let id = call.arguments as? String else {
+            result(FlutterError(code: "INVALID_ARGUMENT", message: "User ID is required", details: nil))
+            return
+        }
         AppEvents.shared.userID = id
         result(nil)
     }
 
     private func handleSetAutoLogAppEventsEnabled(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-        let enabled = call.arguments as! Bool
+        let enabled = call.arguments as? Bool ?? false
         Settings.shared.isAutoLogAppEventsEnabled = enabled
         result(nil)
     }
 
     private func handleSetDataProcessingOptions(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-        let arguments = call.arguments as? [String: Any] ?? [String: Any]()
-        let modes = arguments["options"] as? [String] ?? []
-        let state = arguments["state"] as? Int32 ?? 0
-        let country = arguments["country"] as? Int32 ?? 0
-
-        Settings.shared.setDataProcessingOptions(modes, country: country, state: state)
-
+        // Facebook SDK 18.x+: setDataProcessingOptions was removed from Settings
+        // Data processing options should now be configured via Facebook's Data Use Checkup
+        // See: https://developers.facebook.com/docs/development/data-processing-options
+        print("[FacebookAppEvents] setDataProcessingOptions() is not available in Facebook SDK 18.x+. Configure data processing options via Facebook's Data Use Checkup.")
         result(nil)
     }
 
     private func handlePurchased(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-        let arguments = call.arguments as? [String: Any] ?? [String: Any]()
-        let amount = arguments["amount"] as! Double
-        let currency = arguments["currency"] as! String
-        let parameters = arguments["parameters"] as? [AppEvents.ParameterName: Any] ?? [AppEvents.ParameterName: Any]()
-        AppEvents.shared.logPurchase(amount: amount, currency: currency, parameters: parameters)
+        let arguments = call.arguments as? [String: Any] ?? [:]
+        guard let amount = arguments["amount"] as? Double,
+              let currency = arguments["currency"] as? String else {
+            result(FlutterError(code: "INVALID_ARGUMENT", message: "Amount and currency are required", details: nil))
+            return
+        }
 
+        let rawParams = arguments["parameters"] as? [String: Any] ?? [:]
+        let parameters: [AppEvents.ParameterName: Any] = Dictionary(
+            uniqueKeysWithValues: rawParams.map { key, value in
+                (AppEvents.ParameterName(key), value)
+            }
+        )
+
+        AppEvents.shared.logPurchase(amount: amount, currency: currency, parameters: parameters)
         result(nil)
     }
 
     private func handleSetAdvertiserTracking(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-        let arguments = call.arguments as? [String: Any] ?? [String: Any]()
-        let enabled = arguments["enabled"] as! Bool
-        let collectId = arguments["collectId"] as! Bool
-        
+        let arguments = call.arguments as? [String: Any] ?? [:]
+        let enabled = arguments["enabled"] as? Bool ?? false
+        let collectId = arguments["collectId"] as? Bool ?? true
+
         // KIDS APP COMPLIANCE: Control both Facebook SDK and Audience Network
+        // This ensures full COPPA compliance by disabling tracking in both systems
         FBAdSettings.setAdvertiserTrackingEnabled(enabled)
         Settings.shared.isAdvertiserTrackingEnabled = enabled
-        Settings.shared.isAdvertiserIDCollectionEnabled = collectId
+        Settings.shared.isAdvertiserIDCollectionEnabled = enabled && collectId
+
         result(nil)
     }
 }

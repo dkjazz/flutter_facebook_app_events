@@ -45,4 +45,122 @@ void main() {
       );
     });
   });
+
+  group('Purchase logging', () {
+    test('logPurchase forwards parameters', () async {
+      await facebookAppEvents.logPurchase(
+        amount: 12.34,
+        currency: 'USD',
+        parameters: <String, dynamic>{'item': 'sku-123'},
+      );
+
+      expect(
+        methodCall,
+        isMethodCall(
+          'logPurchase',
+          arguments: <String, dynamic>{
+            'amount': 12.34,
+            'currency': 'USD',
+            'parameters': <String, dynamic>{'item': 'sku-123'},
+          },
+        ),
+      );
+    });
+
+    test('logPurchase omits parameters when null', () async {
+      await facebookAppEvents.logPurchase(
+        amount: 12.34,
+        currency: 'USD',
+      );
+
+      expect(
+        methodCall,
+        isMethodCall(
+          'logPurchase',
+          arguments: <String, dynamic>{
+            'amount': 12.34,
+            'currency': 'USD',
+          },
+        ),
+      );
+    });
+  });
+
+  group('User data', () {
+    test('setUserData omits null fields', () async {
+      await facebookAppEvents.setUserData(
+        email: 'user@example.com',
+        firstName: null,
+        lastName: null,
+      );
+
+      expect(
+        methodCall,
+        isMethodCall(
+          'setUserData',
+          arguments: <String, dynamic>{
+            'email': 'user@example.com',
+          },
+        ),
+      );
+    });
+
+    test('setUserData sends empty map when all null', () async {
+      await facebookAppEvents.setUserData();
+
+      expect(
+        methodCall,
+        isMethodCall(
+          'setUserData',
+          arguments: <String, dynamic>{},
+        ),
+      );
+    });
+
+    test('setUserData never sends null values (regression)', () async {
+      await facebookAppEvents.setUserData(
+        email: null,
+        firstName: 'First',
+        lastName: null,
+        phone: null,
+        dateOfBirth: null,
+        gender: null,
+        city: null,
+        state: null,
+        zip: null,
+        country: null,
+      );
+
+      expect(methodCall?.method, 'setUserData');
+      final args = methodCall?.arguments as Map<dynamic, dynamic>?;
+      expect(args, isNotNull);
+      expect(args!.values.any((v) => v == null), isFalse);
+    });
+  });
+
+  group('Activation', () {
+    test('activateApp sends empty args when null', () async {
+      await facebookAppEvents.activateApp();
+
+      expect(
+        methodCall,
+        isMethodCall(
+          'activateApp',
+          arguments: <String, dynamic>{},
+        ),
+      );
+    });
+
+    test('activateApp forwards applicationId when provided', () async {
+      await facebookAppEvents.activateApp(applicationId: '123');
+
+      expect(
+        methodCall,
+        isMethodCall(
+          'activateApp',
+          arguments: <String, dynamic>{'applicationId': '123'},
+        ),
+      );
+    });
+  });
 }

@@ -2,6 +2,7 @@ package id.oddbit.flutter.facebook_app_events
 
 import androidx.annotation.NonNull
 
+import android.app.Application
 import android.os.Bundle
 import android.util.Log
 import com.facebook.FacebookSdk
@@ -32,19 +33,25 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
 
   private val logTag = "FacebookAppEvents"
 
+  private var application: Application? = null
+
   override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
     channel = MethodChannel(flutterPluginBinding.binaryMessenger, "flutter.oddbit.id/facebook_app_events")
     channel.setMethodCallHandler(this)
+
+    application = flutterPluginBinding.applicationContext.applicationContext as? Application
     appEventsLogger = AppEventsLogger.newLogger(flutterPluginBinding.applicationContext)
     anonymousId = AppEventsLogger.getAnonymousAppDeviceGUID(flutterPluginBinding.applicationContext)
   }
 
   override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
+    application = null
     channel.setMethodCallHandler(null)
   }
 
   override fun onMethodCall(call: MethodCall, result: Result) {
     when (call.method) {
+      "activateApp" -> handleActivateApp(call, result)
       "clearUserData" -> handleClearUserData(call, result)
       "setUserData" -> handleSetUserData(call, result)
       "clearUserID" -> handleClearUserId(call, result)
@@ -63,13 +70,28 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
     }
   }
 
+  private fun handleActivateApp(call: MethodCall, result: Result) {
+      val application = this.application
+
+      if (application == null) {
+          result.error("missing_application", "could not activate app: Android application is missing", null)
+          return
+      }
+
+      val applicationId = call.argument("applicationId") as? String
+
+      AppEventsLogger.activateApp(application, applicationId)
+
+      result.success(null)
+  }
+
   private fun handleClearUserData(call: MethodCall, result: Result) {
     AppEventsLogger.clearUserData()
     result.success(null)
   }
 
- private fun handleSetUserData(call: MethodCall, result: Result) {
-    val parameters = call.argument("parameters") as? Map<String, Object>
+  private fun handleSetUserData(call: MethodCall, result: Result) {
+    val parameters = call.arguments as? Map<String, Any?> ?: emptyMap()
     val parameterBundle = createBundleFromMap(parameters)
 
     AppEventsLogger.setUserData(
@@ -106,22 +128,28 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
   }
   
   private fun handleSetAdvertiserTracking(call: MethodCall, result: Result) {
-    val enabled = call.argument("enabled") as? Boolean ?: false
-    val collectId = call.argument("collectId") as? Boolean ?: false
-    FacebookSdk.setAdvertiserIDCollectionEnabled(collectId)
-    FacebookSdk.setIsDebugEnabled(enabled)
-    // Enable logging for debug builds
-    if (enabled && BuildConfig.BUILD_TYPE == "debug") {
+    val enabled = call.argument<Boolean>("enabled") ?: false
+    val collectId = call.argument<Boolean>("collectId") ?: true
+
+    FacebookSdk.setAdvertiserIDCollectionEnabled(enabled && collectId)
+
+    if (BuildConfig.DEBUG) {
+      FacebookSdk.setIsDebugEnabled(true && enabled)
       FacebookSdk.addLoggingBehavior(LoggingBehavior.APP_EVENTS)
       FacebookSdk.addLoggingBehavior(LoggingBehavior.REQUESTS)
     }
-    result.success(null);
+
+    result.success(null)
   }
 
   private fun handleLogEvent(call: MethodCall, result: Result) {
-    val eventName = call.argument("name") as? String
-    val parameters = call.argument("parameters") as? Map<String, Object>
-    val valueToSum = call.argument("_valueToSum") as? Double
+    val eventName = call.argument<String>("name")
+    if (eventName == null) {
+      result.error("INVALID_ARGUMENT", "Event name is required and cannot be null.", null)
+      return
+    }
+    val parameters = call.argument<Map<String, Any>>("parameters")
+    val valueToSum = call.argument<Double>("_valueToSum")
 
     if (valueToSum != null && parameters != null) {
       val parameterBundle = createBundleFromMap(parameters)
@@ -139,9 +167,13 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
   }
 
   private fun handlePushNotificationOpen(call: MethodCall, result: Result) {
-    val action = call.argument("action") as? String
-    val payload = call.argument("payload") as? Map<String, Object>
-    val payloadBundle = createBundleFromMap(payload)!!
+    val action = call.argument<String>("action")
+    val payload = call.argument<Map<String, Any>>("payload")
+    val payloadBundle = createBundleFromMap(payload)
+    if (payloadBundle == null) {
+      result.error("INVALID_ARGUMENT", "Payload is required", null)
+      return
+    }
 
     if (action != null) {
       appEventsLogger.logPushNotificationOpen(payloadBundle, action)
@@ -153,60 +185,71 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
   }
 
   private fun handleSetUserId(call: MethodCall, result: Result) {
-    val id = call.arguments as String
+    val id = call.arguments as? String
+    if (id == null) {
+      result.error("INVALID_ARGUMENT", "User ID is required", null)
+      return
+    }
     AppEventsLogger.setUserID(id)
     result.success(null)
   }
 
-  private fun createBundleFromMap(parameterMap: Map<String, Any>?): Bundle? {
+  private fun createBundleFromMap(parameterMap: Map<String, Any?>?): Bundle? {
     if (parameterMap == null) {
       return null
     }
 
     val bundle = Bundle()
     for (jsonParam in parameterMap.entries) {
-      val value = jsonParam.value
+      val value: Any? = jsonParam.value
       val key = jsonParam.key
-      if (value is String) {
-        bundle.putString(key, value as String)
-      } else if (value is Int) {
-        bundle.putInt(key, value as Int)
-      } else if (value is Long) {
-        bundle.putLong(key, value as Long)
-      } else if (value is Double) {
-        bundle.putDouble(key, value as Double)
-      } else if (value is Boolean) {
-        bundle.putBoolean(key, value as Boolean)
-      } else if (value is Map<*, *>) {
-        val nestedBundle = createBundleFromMap(value as Map<String, Any>)
-        bundle.putBundle(key, nestedBundle as Bundle)
-      } else {
-        throw IllegalArgumentException(
-            "Unsupported value type: " + value.javaClass.kotlin)
+      when (value) {
+        null -> {
+          // Ignore null values (Dart may send keys with null values).
+        }
+        is String -> bundle.putString(key, value)
+        is Int -> bundle.putInt(key, value)
+        is Long -> bundle.putLong(key, value)
+        is Double -> bundle.putDouble(key, value)
+        is Boolean -> bundle.putBoolean(key, value)
+        is Map<*, *> -> {
+          @Suppress("UNCHECKED_CAST")
+          val nestedBundle = createBundleFromMap(value as? Map<String, Any?>)
+          if (nestedBundle != null) {
+            bundle.putBundle(key, nestedBundle)
+          }
+        }
+        else -> throw IllegalArgumentException(
+            "Unsupported value type: ${value::class}")
       }
     }
     return bundle
   }
 
   private fun handleSetAutoLogAppEventsEnabled(call: MethodCall, result: Result) {
-    val enabled = call.arguments as Boolean
+    val enabled = call.arguments as? Boolean ?: false
     FacebookSdk.setAutoLogAppEventsEnabled(enabled)
     result.success(null)
   }
 
   private fun handleSetDataProcessingOptions(call: MethodCall, result: Result) {
-    val options = call.argument("options") as? ArrayList<String> ?: arrayListOf()
-    val country = call.argument("country") as? Int ?: 0
-    val state = call.argument("state") as? Int ?: 0
+    val options = call.argument<ArrayList<String>>("options") ?: arrayListOf()
+    val country = call.argument<Int>("country") ?: 0
+    val state = call.argument<Int>("state") ?: 0
 
     FacebookSdk.setDataProcessingOptions(options.toTypedArray(), country, state)
     result.success(null)
   }
 
   private fun handlePurchased(call: MethodCall, result: Result) {
-    var amount = (call.argument("amount") as? Double)?.toBigDecimal()
-    var currency = Currency.getInstance(call.argument("currency") as? String)
-    val parameters = call.argument("parameters") as? Map<String, Object>
+    val amount = call.argument<Double>("amount")?.toBigDecimal()
+    val currencyCode = call.argument<String>("currency")
+    if (amount == null || currencyCode == null) {
+      result.error("INVALID_ARGUMENT", "Amount and currency are required", null)
+      return
+    }
+    val currency = Currency.getInstance(currencyCode)
+    val parameters = call.argument<Map<String, Any>>("parameters")
     val parameterBundle = createBundleFromMap(parameters) ?: Bundle()
 
     appEventsLogger.logPurchase(amount, currency, parameterBundle)

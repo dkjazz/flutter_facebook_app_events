@@ -1,11 +1,40 @@
+## 0.24.0-kids.1
+- Merge upstream v0.24.0 while preserving kids app compliance features
+- Add `activateApp()` for manual app activation when auto-logging is disabled
+- iOS: Add Swift Package Manager (SPM) support
+- Fix Android crash when `setUserData()` is called with null fields
+- iOS: Update Swift code for Facebook SDK 18.x compatibility
+- Preserve FBAudienceNetwork integration for COPPA compliance
+
+## 0.24.0
+- Add `activateApp()` to manually log app activation when automatic app event logging is disabled (PR [#466](https://github.com/oddbit/flutter_facebook_app_events/pull/466))
+
+## 0.23.0
+- iOS: Add Swift Package Manager (SPM) support (fixes [#464](https://github.com/oddbit/flutter_facebook_app_events/issues/464))
+
+## 0.22.1
+- Fix Android crash when `setUserData()` is called with null fields (fixes [#462](https://github.com/oddbit/flutter_facebook_app_events/issues/462))
+
+## 0.22.0
+- iOS: Update Swift code for Facebook SDK 18.x compatibility (PR [#455](https://github.com/oddbit/flutter_facebook_app_events/pull/455), fixes [#451](https://github.com/oddbit/flutter_facebook_app_events/issues/451) and [#454](https://github.com/oddbit/flutter_facebook_app_events/issues/454))
+- iOS: Refactor parameter unpacking (PR [#461](https://github.com/oddbit/flutter_facebook_app_events/pull/461), fixes [#460](https://github.com/oddbit/flutter_facebook_app_events/issues/460))
+- Refactor/default parameter values (PR [#458](https://github.com/oddbit/flutter_facebook_app_events/pull/458))
+
+## 0.21.1
+- Refactor advertiser tracking logic (PR [#457](https://github.com/oddbit/flutter_facebook_app_events/pull/457))
+- Remove violating parameter in example app (PR [#459](https://github.com/oddbit/flutter_facebook_app_events/pull/459))
+
+## 0.21.0
+- Update plugin to support modern Flutter plugin API and Android Gradle Plugin (PR [#418](https://github.com/oddbit/flutter_facebook_app_events/pull/418))
+
 ## 0.20.2
-Fix Flutter compatibility issues
+- Fix Flutter compatibility issues
 - Remove any deprecated Flutter plugin registration APIs
 - Ensure compatibility with latest Flutter versions
 - Clean up Android Kotlin compilation for modern Flutter toolchain
 
 ## 0.20.1
-Updating example app 
+Updating example app
 
 ## 0.20.0
 ### ⚠️ Breaking Changes
@@ -53,7 +82,7 @@ Updating example app
 ## 0.18.3
 - Fixing issues [#270](https://github.com/oddbit/flutter_facebook_app_events/issues/270) and [#272](https://github.com/oddbit/flutter_facebook_app_events/issues/272)
 - Updating `FBSDKCoreKit` to `15.1`
-- Updating `FBAudienceNetwork` to `6.12` 
+- Updating `FBAudienceNetwork` to `6.12`
 
 ## 0.18.2
 - Changing iOS version dependency to follow all `15.x` versions.
@@ -87,7 +116,7 @@ See [PR 224](https://github.com/oddbit/flutter_facebook_app_events/pull/224)
 
 ## 0.14.7
 Narrowing down the Facebook SDK version for iOS due to the trouble it seems to cause with different developer
-environments and setups. See discussion in issue [#159](https://github.com/oddbit/flutter_facebook_app_events/issues/159) 
+environments and setups. See discussion in issue [#159](https://github.com/oddbit/flutter_facebook_app_events/issues/159)
 and [#171](https://github.com/oddbit/flutter_facebook_app_events/issues/171).
 
 ## 0.14.6
@@ -101,7 +130,7 @@ Fixing [issue 161](https://github.com/oddbit/flutter_facebook_app_events/issues/
 `isAdvertiserIDCollectionEnabled` in the `setAdvertiserTracking()` method.
 
 ## 0.14.3
-Fixing [issue 156](https://github.com/oddbit/flutter_facebook_app_events/issues/156) - iOS Compilation error 
+Fixing [issue 156](https://github.com/oddbit/flutter_facebook_app_events/issues/156) - iOS Compilation error
 
 ## 0.14.2
 Fixing [issue 147](https://github.com/oddbit/flutter_facebook_app_events/issues/147) - `logAddToCart()` throws PlatformException
@@ -126,8 +155,8 @@ Importing `FBSDKCoreKit_Basics` as a real fix for [#127](https://github.com/oddb
 
 ## 0.13.3
 **N.B. Workaround release!!**
-Removing function body for iOS handling of deprecated method `setUserData`. See issues [#127](https://github.com/oddbit/flutter_facebook_app_events/issues/127) and [#129](https://github.com/oddbit/flutter_facebook_app_events/issues/129). We 
-were unable to reproduce or successfully troubleshoot the reported problems within the team and decided that it would be 
+Removing function body for iOS handling of deprecated method `setUserData`. See issues [#127](https://github.com/oddbit/flutter_facebook_app_events/issues/127) and [#129](https://github.com/oddbit/flutter_facebook_app_events/issues/129). We
+were unable to reproduce or successfully troubleshoot the reported problems within the team and decided that it would be
 better to get around the compilation error with the sacrifice of the `setUserData` in the possibly short time before it
 is removed from the SDK anyway.
 
@@ -138,7 +167,7 @@ is removed from the SDK anyway.
 - Fixing issue [#123](https://github.com/oddbit/flutter_facebook_app_events/issues/123)
   - Emptying the handling method for iOS `updateUserProperties` as it is removed from iOS SDK but only deprecated in Android.
   - Removing `nil` parameter from iOS `initializeSDK` method
-  - Updating the missing `AppEvents.UserDataType` declarations 
+  - Updating the missing `AppEvents.UserDataType` declarations
 
 ## 0.13.0
 - Bumping Facebook SDK core kit to `11.1`
@@ -154,7 +183,7 @@ is removed from the SDK anyway.
   - `logSubscribe` (see discussion [#119](https://github.com/oddbit/flutter_facebook_app_events/discussions/119))
 
 ## 0.12.0
-**Breaking changes:** Starting from this release, the plugin require Flutter 2.0 with support for 
+**Breaking changes:** Starting from this release, the plugin require Flutter 2.0 with support for
 [null safety](https://flutter.dev/docs/null-safety)
 
 - Updating to Flutter 2.0 and null safety in [PR #90](https://github.com/oddbit/flutter_facebook_app_events/pull/90)
@@ -181,7 +210,7 @@ is removed from the SDK anyway.
 
 ## 0.8.2
 
-- Upgrading FBSDKCoreKit to 8.2.0 as described in [issue #56](https://github.com/oddbit/flutter_facebook_app_events/issues/56) 
+- Upgrading FBSDKCoreKit to 8.2.0 as described in [issue #56](https://github.com/oddbit/flutter_facebook_app_events/issues/56)
 and closed in [PR #65](https://github.com/oddbit/flutter_facebook_app_events/issues/56)
 
 ## 0.8.1
