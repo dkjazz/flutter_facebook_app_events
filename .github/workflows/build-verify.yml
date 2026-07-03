@@ -108,9 +108,9 @@ jobs:
           # AGP 9.1.1 requires Gradle >= 9.3.1 and enables Built-in Kotlin by default, so the
           # example app must no longer apply kotlin-android (Flutter supplies KGP). Migrating it
           # here lets this cell exercise the plugin's `agpMajor >= 9` branch end to end.
-          sed -i 's#com.android.tools.build:gradle:8.9.2#com.android.tools.build:gradle:9.1.1#' example/android/build.gradle
-          sed -i 's#com.android.application" version "8.9.2"#com.android.application" version "9.1.1"#' example/android/settings.gradle
-          sed -i 's#gradle-8.11.1-bin.zip#gradle-9.3.1-bin.zip#' example/android/gradle/wrapper/gradle-wrapper.properties
+          sed -i 's#com.android.tools.build:gradle:8.13.0#com.android.tools.build:gradle:9.1.1#' example/android/build.gradle
+          sed -i 's#com.android.application" version "8.13.0"#com.android.application" version "9.1.1"#' example/android/settings.gradle
+          sed -i 's#gradle-8.13-bin.zip#gradle-9.3.1-bin.zip#' example/android/gradle/wrapper/gradle-wrapper.properties
           sed -i '/id "kotlin-android"/d' example/android/app/build.gradle
           sed -i '/kotlinOptions {/,/}/d' example/android/app/build.gradle
 

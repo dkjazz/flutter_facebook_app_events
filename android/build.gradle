@@ -8,7 +8,7 @@ buildscript {
     }
 
     dependencies {
-        classpath("com.android.tools.build:gradle:8.9.2")
+        classpath("com.android.tools.build:gradle:8.13.0")
     }
 }
 
@@ -39,7 +39,7 @@ if (agpMajor < 9) {
 android {
     namespace "id.oddbit.flutter.facebook_app_events"
 
-    compileSdk = 35
+    compileSdk = 36
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -56,7 +56,7 @@ android {
 
     defaultConfig {
         minSdk = 21
-        targetSdk = 35
+        targetSdk = 36
         consumerProguardFiles 'consumer-proguard-rules.pro'
     }
 
