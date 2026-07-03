@@ -1,3 +1,7 @@
+## 0.30.2
+
+- **Update Android toolchain** — AGP 8.13.0, Gradle 8.13, Kotlin 2.4.0, `compileSdk`/`targetSdk` 36. No change to `minSdk` or the Facebook Android SDK Maven range (`[18.0,19.0)`), which already resolves to the latest 18.x release (18.3.0); the CocoaPods/SPM `~> 18.0` / `"18.0.0"..<"19.0.0"` iOS pins likewise already cover the latest 18.x release (18.1.0), so no iOS dependency changes were needed this round.
+
 ## 0.30.1
 
 - **Fix (Android):** stop triggering Flutter 3.44+'s "plugins that apply Kotlin Gradle Plugin (KGP)" warning and build on AGP 9, without raising the minimum Flutter SDK. KGP is now applied only on AGP < 9 (Flutter's Built-in Kotlin supplies it otherwise) (fixes [#492](https://github.com/oddbit/flutter_facebook_app_events/issues/492)).
