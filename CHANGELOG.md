@@ -1,3 +1,10 @@
+## 0.30.3
+
+- **Fix (Android):** `getApplicationId` now reads the live `FacebookSdk.getApplicationId()` instead of the app id captured when the plugin attached to the engine, so app-id changes made programmatically after startup are reflected — matching iOS (`Settings.shared.appID`) and the documented behavior.
+- **Fix (Android):** `logPushNotificationOpen` now returns a clean `INVALID_ARGUMENT` error when the payload contains a value an Android `Bundle` cannot represent (e.g. a list), instead of an opaque platform exception. The error message names the offending key and suggests JSON-encoding structured values.
+- **Fix:** `setDataProcessingOptions` validates in the Dart layer that `country` and `state` fit in a signed 32-bit integer (the type the native APIs take) and throws a `RangeError` otherwise. Out-of-range values previously surfaced as an opaque `ClassCastException` on Android; iOS already rejected them natively.
+- Stop sending explicit `null`s over the method channel for omitted arguments of `setDataProcessingOptions` and `logPushNotificationOpen`, consistent with the rest of the API.
+
 ## 0.30.2
 
 - **Update Android toolchain** — AGP 8.13.0, Gradle 8.13, Kotlin 2.4.0, `compileSdk`/`targetSdk` 36. No change to `minSdk` or the Facebook Android SDK Maven range (`[18.0,19.0)`), which already resolves to the latest 18.x release (18.3.0); the CocoaPods/SPM `~> 18.0` / `"18.0.0"..<"19.0.0"` iOS pins likewise already cover the latest 18.x release (18.1.0), so no iOS dependency changes were needed this round.

@@ -42,12 +42,12 @@ packages:
     source: hosted
     version: "1.19.1"
   facebook_app_events:
-    dependency: "direct dev"
+    dependency: "direct main"
     description:
       path: ".."
       relative: true
     source: path
-    version: "0.30.0"
+    version: "0.30.3"
   fake_async:
     dependency: transitive
     description:

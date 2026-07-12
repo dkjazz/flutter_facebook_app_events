@@ -194,7 +194,7 @@ class FacebookAppEvents {
 
   /// Returns the app ID this logger was configured to log to.
   ///
-  /// Maps to `appEventsLogger.applicationId` on Android and
+  /// Maps to `FacebookSdk.getApplicationId()` on Android and
   /// `Settings.shared.appID` on iOS — both resolve the app id from platform
   /// configuration (`AndroidManifest.xml` / `Info.plist`) and reflect any app
   /// id set programmatically on the SDK.
@@ -260,7 +260,10 @@ class FacebookAppEvents {
       'action': action,
     };
 
-    return _channel.invokeMethod<void>('logPushNotificationOpen', args);
+    return _channel.invokeMethod<void>(
+      'logPushNotificationOpen',
+      _filterOutNulls(args),
+    );
   }
 
   /// Sets a user [id] to associate with all app events.
@@ -422,6 +425,9 @@ class FacebookAppEvents {
   /// `setDataProcessingOptions(['LDU'], country: 0, state: 0)`. Passing an
   /// empty [options] list disables Limited Data Use.
   ///
+  /// [country] and [state] must fit in a signed 32-bit integer (the type the
+  /// native APIs take); a [RangeError] is thrown otherwise.
+  ///
   /// See documentation:
   /// - https://developers.facebook.com/docs/development/data-processing-options
   /// - [iOS Settings](https://developers.facebook.com/docs/reference/iossdk/current/FBSDKCoreKit/classes/settings.html)
@@ -431,13 +437,19 @@ class FacebookAppEvents {
     int? country,
     int? state,
   }) {
+    _checkFitsIn32Bits(country, 'country');
+    _checkFitsIn32Bits(state, 'state');
+
     final args = <String, dynamic>{
       'options': options,
       'country': country,
       'state': state,
     };
 
-    return _channel.invokeMethod<void>('setDataProcessingOptions', args);
+    return _channel.invokeMethod<void>(
+      'setDataProcessingOptions',
+      _filterOutNulls(args),
+    );
   }
 
   /// Logs a purchase event.
@@ -812,6 +824,18 @@ class FacebookAppEvents {
   // ---------------------------------------------------------------------------
   //
   // PRIVATE METHODS BELOW HERE
+
+  /// Throws a [RangeError] if [value] does not fit in a signed 32-bit integer.
+  ///
+  /// The standard method codec delivers larger Dart ints as 64-bit values,
+  /// which the native handlers cannot pass to SDK APIs typed as 32-bit ints.
+  static void _checkFitsIn32Bits(int? value, String name) {
+    const min = -0x80000000;
+    const max = 0x7FFFFFFF;
+    if (value != null && (value < min || value > max)) {
+      throw RangeError.range(value, min, max, name);
+    }
+  }
 
   /// Creates a new map containing all of the key/value pairs from [parameters]
   /// except those whose value is `null`.

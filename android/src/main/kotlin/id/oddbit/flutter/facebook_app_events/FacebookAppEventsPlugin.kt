@@ -146,12 +146,17 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
   }
 
   private fun handleGetApplicationId(call: MethodCall, result: Result) {
-    result.success(appEventsLogger.applicationId)
+    // Read the live SDK setting rather than `appEventsLogger.applicationId`,
+    // which is captured when the logger is created at engine attach and would
+    // go stale if the app id is changed programmatically afterwards. This
+    // matches the iOS handler, which reads `Settings.shared.appID`.
+    result.success(FacebookSdk.getApplicationId())
   }
- private fun handleGetAnonymousId(call: MethodCall, result: Result) {
+
+  private fun handleGetAnonymousId(call: MethodCall, result: Result) {
     result.success(anonymousId)
   }
-  
+
   private fun handleSetGraphApiVersion(call: MethodCall, result: Result) {
     val version = call.arguments as? String
     if (version == null) {
@@ -215,7 +220,15 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
   private fun handlePushNotificationOpen(call: MethodCall, result: Result) {
     val action = call.argument<String>("action")
     val payload = call.argument<Map<String, Any>>("payload")
-    val payloadBundle = createBundleFromMap(payload)
+    // Unlike logEvent parameters, the payload is not validated in the Dart
+    // layer, so map Bundle-incompatible values (e.g. lists) to a clean error
+    // instead of an opaque platform exception.
+    val payloadBundle = try {
+      createBundleFromMap(payload)
+    } catch (e: IllegalArgumentException) {
+      result.error("INVALID_ARGUMENT", e.message, null)
+      return
+    }
     if (payloadBundle == null) {
       result.error("INVALID_ARGUMENT", "Payload is required", null)
       return
@@ -266,7 +279,8 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
           }
         }
         else -> throw IllegalArgumentException(
-            "Unsupported value type: ${value::class}")
+            "Unsupported value type ${value.javaClass.simpleName} for key '$key'; " +
+            "encode structured values as a JSON string.")
       }
     }
     return bundle

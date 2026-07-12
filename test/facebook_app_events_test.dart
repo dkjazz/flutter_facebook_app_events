@@ -501,6 +501,38 @@ void main() {
         ),
       );
     });
+
+    test('setDataProcessingOptions omits null country and state', () async {
+      await facebookAppEvents.setDataProcessingOptions(['LDU']);
+
+      expect(
+        methodCall,
+        isMethodCall(
+          'setDataProcessingOptions',
+          arguments: <String, dynamic>{
+            'options': ['LDU'],
+          },
+        ),
+      );
+    });
+
+    test('setDataProcessingOptions throws RangeError for values that do not '
+        'fit in 32 bits', () {
+      expect(
+        () => facebookAppEvents.setDataProcessingOptions(
+          ['LDU'],
+          country: 0x80000000,
+        ),
+        throwsRangeError,
+      );
+      expect(
+        () => facebookAppEvents.setDataProcessingOptions(
+          ['LDU'],
+          state: -0x80000001,
+        ),
+        throwsRangeError,
+      );
+    });
   });
 
   group('User lifecycle', () {
@@ -555,6 +587,22 @@ void main() {
           arguments: <String, dynamic>{
             'payload': {'campaign': 'spring-sale'},
             'action': 'opened',
+          },
+        ),
+      );
+    });
+
+    test('logPushNotificationOpen omits action when null', () async {
+      await facebookAppEvents.logPushNotificationOpen(
+        payload: {'campaign': 'spring-sale'},
+      );
+
+      expect(
+        methodCall,
+        isMethodCall(
+          'logPushNotificationOpen',
+          arguments: <String, dynamic>{
+            'payload': {'campaign': 'spring-sale'},
           },
         ),
       );
