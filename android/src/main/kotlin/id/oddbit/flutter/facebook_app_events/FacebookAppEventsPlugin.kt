@@ -157,7 +157,6 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
     result.success(anonymousId)
   }
 
-
   private fun handleSetGraphApiVersion(call: MethodCall, result: Result) {
     val version = call.arguments as? String
     if (version == null) {

@@ -196,7 +196,7 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
     private func handleGetApplicationId(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         // Settings.shared.appID resolves the Info.plist FacebookAppID by
         // default and reflects any app id set programmatically on the SDK,
-        // matching Android's `appEventsLogger.applicationId`.
+        // matching Android's `FacebookSdk.getApplicationId()`.
         result(Settings.shared.appID)
     }
 
