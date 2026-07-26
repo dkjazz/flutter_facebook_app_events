@@ -1,26 +1,21 @@
 Pod::Spec.new do |s|
   s.name             = 'facebook_app_events'
-  s.version          = '0.24.0-kids.1'
+  s.version          = '0.30.3-kids.1'
   s.summary          = 'Flutter plugin for Facebook Analytics and App Events'
   s.description      = <<-DESC
 Flutter plugin for Facebook Analytics and App Events
                        DESC
-  s.homepage         = 'https://github.com/oddbit/flutter_facebook_app_events'
+  s.homepage         = 'https://github.com/dkjazz/flutter_facebook_app_events'
   s.license          = { :file => '../LICENSE' }
   s.author           = { 'Oddbit Team' => 'opensource@oddbit.id' }
   s.source           = { :path => '.' }
   s.source_files = 'facebook_app_events/Sources/facebook_app_events/**/*.{swift}'
   s.static_framework = true
   s.dependency 'Flutter'
-  s.swift_version       = '5.0'
-  s.ios.deployment_target = '12.0'
+  s.swift_version       = '5.9'
+  s.ios.deployment_target = '13.0'
 
-  # Do not specify PATCH version of FBSDKCoreKit. See README file for explanation
-  # https://github.com/oddbit/flutter_facebook_app_events#dependencies-on-facebook-sdk
-  s.dependency 'FBSDKCoreKit', '~> 18.0'
-  
-  # KIDS APP COMPLIANCE: Keep FBAudienceNetwork for complete IDFA control
-  # See docs on FBAudienceNetwork
-  # https://developers.facebook.com/docs/audience-network/setting-up/platform-setup/ios/add-sdk/
-  s.dependency 'FBAudienceNetwork', '6.16'
+  # Kids-app fork: pin the audited native SDK and do not include Audience Network.
+  # Excluding the advertising SDK is stronger than loading it only to disable IDFA.
+  s.dependency 'FBSDKCoreKit', '18.1.0'
 end

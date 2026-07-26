@@ -1,10 +1,14 @@
+// Copyright (c) Oddbit (https://oddbit.id)
+//
+// This source file is part of facebook_app_events.
+// Licensed under the Apache License, Version 2.0. See LICENSE and NOTICE.
+
 import Flutter
 import UIKit
 import FBSDKCoreKit
 import FBSDKCoreKit_Basics
-import FBAudienceNetwork
 
-public class FacebookAppEventsPlugin: NSObject, FlutterPlugin {
+public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeCycleDelegate {
     public static func register(with registrar: FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(
             name: "flutter.oddbit.id/facebook_app_events",
@@ -17,8 +21,19 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin {
         // "Removal of Auto Initialization of SDK" section
         ApplicationDelegate.shared.initializeSDK()
 
+        // Override the Graph API version because Facebook iOS SDK v18.x still defaults to v17.0,
+        // which was removed by Meta on September 12, 2025. This is a known upstream issue:
+        // https://github.com/facebook/facebook-ios-sdk/issues/2610
+        Settings.shared.graphAPIVersion = "v24.0"
+
         registrar.addMethodCallDelegate(instance, channel: channel)
         registrar.addApplicationDelegate(instance)
+        // Also receive UIScene lifecycle callbacks. Apps on the UIScene
+        // lifecycle (the default for Flutter 3.38+) deliver URL opens to the
+        // scene delegate; without this the `application(_:open:options:)` path
+        // below never fires for those apps.
+        // See: https://docs.flutter.dev/release/breaking-changes/uiscenedelegate
+        registrar.addSceneDelegate(instance)
     }
 
     /// Connect app delegate with SDK
@@ -29,6 +44,34 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin {
     ) -> Bool {
         // For Facebook SDK 18.x+, use the simplified URL handling
         return ApplicationDelegate.shared.application(app, open: url, options: options)
+    }
+
+    /// Scene-lifecycle counterpart to `application(_:open:options:)`. Apps on
+    /// the UIScene lifecycle (the default for Flutter 3.38+) deliver URL opens
+    /// to the scene delegate instead of the app delegate. Reconstruct the
+    /// open-URL options from each scene context and forward to the Facebook SDK
+    /// via its modern `application(_:open:options:)` API. Returns whether the
+    /// SDK handled any of the URLs.
+    public func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) -> Bool {
+        var handled = false
+        for context in URLContexts {
+            var options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+            if let sourceApplication = context.options.sourceApplication {
+                options[.sourceApplication] = sourceApplication
+            }
+            if let annotation = context.options.annotation {
+                options[.annotation] = annotation
+            }
+            options[.openInPlace] = context.options.openInPlace
+            if ApplicationDelegate.shared.application(
+                UIApplication.shared,
+                open: context.url,
+                options: options
+            ) {
+                handled = true
+            }
+        }
+        return handled
     }
 
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -58,9 +101,31 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin {
         case "logPurchase":
             handlePurchased(call, result: result)
         case "getAnonymousId":
-            handleHandleGetAnonymousId(call, result: result)
+            handleGetAnonymousId(call, result: result)
         case "setAdvertiserTracking":
             handleSetAdvertiserTracking(call, result: result)
+        case "setAdvertiserIdCollectionEnabled":
+            handleSetAdvertiserIdCollectionEnabled(call, result: result)
+        case "setLimitEventAndDataUsage":
+            handleSetLimitEventAndDataUsage(call, result: result)
+        case "setGraphApiVersion":
+            handleSetGraphApiVersion(call, result: result)
+        case "logProductItem":
+            handleLogProductItem(call, result: result)
+        case "setPushNotificationsDeviceToken", "setPushNotificationToken":
+            handleSetPushNotificationToken(call, result: result)
+        case "setFlushBehavior":
+            handleSetFlushBehavior(call, result: result)
+        case "getFlushBehavior":
+            handleGetFlushBehavior(call, result: result)
+        case "getUserData":
+            handleGetUserData(call, result: result)
+        case "getUserID":
+            handleGetUserID(call, result: result)
+        case "clearUserDataForType":
+            handleClearUserDataForType(call, result: result)
+        case "setDebugLoggingEnabled":
+            handleSetDebugLoggingEnabled(call, result: result)
         default:
             result(FlutterMethodNotImplemented)
         }
@@ -69,8 +134,14 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin {
     private func handleActivateApp(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         let arguments = call.arguments as? [String: Any] ?? [:]
 
+        // The override applies per call, matching Android's
+        // `activateApp(application, applicationId)` where a null id falls back
+        // to the default app id. `loggingOverrideAppID` is global state on the
+        // SDK, so reset it when no id is given.
         if let applicationId = arguments["applicationId"] as? String, !applicationId.isEmpty {
             AppEvents.shared.loggingOverrideAppID = applicationId
+        } else {
+            AppEvents.shared.loggingOverrideAppID = nil
         }
 
         AppEvents.shared.activateApp()
@@ -85,16 +156,29 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin {
     private func handleSetUserData(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         let arguments = call.arguments as? [String: Any] ?? [:]
 
-        AppEvents.shared.setUserData(arguments["email"] as? String, forType: FBSDKAppEventUserDataType.email)
-        AppEvents.shared.setUserData(arguments["firstName"] as? String, forType: FBSDKAppEventUserDataType.firstName)
-        AppEvents.shared.setUserData(arguments["lastName"] as? String, forType: FBSDKAppEventUserDataType.lastName)
-        AppEvents.shared.setUserData(arguments["phone"] as? String, forType: FBSDKAppEventUserDataType.phone)
-        AppEvents.shared.setUserData(arguments["dateOfBirth"] as? String, forType: FBSDKAppEventUserDataType.dateOfBirth)
-        AppEvents.shared.setUserData(arguments["gender"] as? String, forType: FBSDKAppEventUserDataType.gender)
-        AppEvents.shared.setUserData(arguments["city"] as? String, forType: FBSDKAppEventUserDataType.city)
-        AppEvents.shared.setUserData(arguments["state"] as? String, forType: FBSDKAppEventUserDataType.state)
-        AppEvents.shared.setUserData(arguments["zip"] as? String, forType: FBSDKAppEventUserDataType.zip)
-        AppEvents.shared.setUserData(arguments["country"] as? String, forType: FBSDKAppEventUserDataType.country)
+        // Merge semantics: only update the fields present in the call.
+        // Passing nil to the native setter REMOVES the stored field on iOS,
+        // while Android ignores nulls (merge), so skipping absent keys here
+        // keeps both platforms consistent. Clearing is done explicitly via
+        // clearUserData / clearUserDataForType.
+        let fields: [(key: String, type: FBSDKAppEventUserDataType)] = [
+            ("email", .email),
+            ("firstName", .firstName),
+            ("lastName", .lastName),
+            ("phone", .phone),
+            ("dateOfBirth", .dateOfBirth),
+            ("gender", .gender),
+            ("city", .city),
+            ("state", .state),
+            ("zip", .zip),
+            ("country", .country),
+            ("externalId", .externalId),
+        ]
+        for field in fields {
+            if let value = arguments[field.key] as? String {
+                AppEvents.shared.setUserData(value, forType: field.type)
+            }
+        }
 
         result(nil)
     }
@@ -110,13 +194,13 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin {
     }
 
     private func handleGetApplicationId(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-        // Facebook SDK 18.x+: appID property was removed from Settings
-        // Retrieve from Info.plist FacebookAppID key as fallback
-        let appId = Bundle.main.object(forInfoDictionaryKey: "FacebookAppID") as? String
-        result(appId)
+        // Settings.shared.appID resolves the Info.plist FacebookAppID by
+        // default and reflects any app id set programmatically on the SDK,
+        // matching Android's `FacebookSdk.getApplicationId()`.
+        result(Settings.shared.appID)
     }
 
-    private func handleHandleGetAnonymousId(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    private func handleGetAnonymousId(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         result(AppEvents.shared.anonymousID)
     }
 
@@ -174,10 +258,23 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin {
     }
 
     private func handleSetDataProcessingOptions(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-        // Facebook SDK 18.x+: setDataProcessingOptions was removed from Settings
-        // Data processing options should now be configured via Facebook's Data Use Checkup
-        // See: https://developers.facebook.com/docs/development/data-processing-options
-        print("[FacebookAppEvents] setDataProcessingOptions() is not available in Facebook SDK 18.x+. Configure data processing options via Facebook's Data Use Checkup.")
+        let arguments = call.arguments as? [String: Any] ?? [:]
+        let options = arguments["options"] as? [String] ?? []
+
+        // The channel codec delivers Dart ints as Int64 when they exceed
+        // Int32, so a forced Int32(_:) conversion would trap. The native API
+        // takes Int32, so reject out-of-range values instead of crashing.
+        guard let country = Int32(exactly: arguments["country"] as? Int ?? 0),
+              let state = Int32(exactly: arguments["state"] as? Int ?? 0) else {
+            result(FlutterError(
+                code: "INVALID_ARGUMENT",
+                message: "country and state must fit in a 32-bit integer",
+                details: nil
+            ))
+            return
+        }
+
+        Settings.shared.setDataProcessingOptions(options, country: country, state: state)
         result(nil)
     }
 
@@ -200,17 +297,180 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin {
         result(nil)
     }
 
+    private func handleSetGraphApiVersion(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let version = call.arguments as? String else {
+            result(FlutterError(code: "INVALID_ARGUMENT", message: "Graph API version string is required", details: nil))
+            return
+        }
+        Settings.shared.graphAPIVersion = version
+        result(nil)
+    }
+
     private func handleSetAdvertiserTracking(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         let arguments = call.arguments as? [String: Any] ?? [:]
         let enabled = arguments["enabled"] as? Bool ?? false
-        let collectId = arguments["collectId"] as? Bool ?? true
-
-        // KIDS APP COMPLIANCE: Control both Facebook SDK and Audience Network
-        // This ensures full COPPA compliance by disabling tracking in both systems
-        FBAdSettings.setAdvertiserTrackingEnabled(enabled)
         Settings.shared.isAdvertiserTrackingEnabled = enabled
-        Settings.shared.isAdvertiserIDCollectionEnabled = enabled && collectId
+        // Kids-app fork: never allow the native SDK to collect IDFA.
+        Settings.shared.isAdvertiserIDCollectionEnabled = false
 
+        result(nil)
+    }
+
+    private func handleSetAdvertiserIdCollectionEnabled(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        // Defense in depth for callers that bypass the fork's Dart API.
+        Settings.shared.isAdvertiserIDCollectionEnabled = false
+        result(nil)
+    }
+
+    private func handleSetLimitEventAndDataUsage(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        let enabled = call.arguments as? Bool ?? false
+        Settings.shared.isEventDataUsageLimited = enabled
+        result(nil)
+    }
+
+    private func handleLogProductItem(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        let arguments = call.arguments as? [String: Any] ?? [:]
+        guard let itemId = arguments["itemId"] as? String,
+              let availabilityToken = arguments["availability"] as? String,
+              let conditionToken = arguments["condition"] as? String,
+              let description = arguments["description"] as? String,
+              let imageLink = arguments["imageLink"] as? String,
+              let link = arguments["link"] as? String,
+              let title = arguments["title"] as? String,
+              let priceAmount = arguments["priceAmount"] as? Double,
+              let currency = arguments["currency"] as? String else {
+            result(FlutterError(code: "INVALID_ARGUMENT", message: "Missing required logProductItem fields", details: nil))
+            return
+        }
+
+        let gtin = arguments["gtin"] as? String
+        let mpn = arguments["mpn"] as? String
+        let brand = arguments["brand"] as? String
+        if gtin == nil && mpn == nil && brand == nil {
+            result(FlutterError(code: "INVALID_ARGUMENT", message: "At least one of gtin, mpn or brand is required", details: nil))
+            return
+        }
+
+        guard let availability = Self.productAvailability(from: availabilityToken),
+              let condition = Self.productCondition(from: conditionToken) else {
+            result(FlutterError(code: "INVALID_ARGUMENT", message: "Invalid availability or condition value", details: nil))
+            return
+        }
+
+        // logProductItem's `parameters` is typed [String: Any] (unlike
+        // logEvent/logPurchase which use [AppEvents.ParameterName: Any]).
+        let parameters = arguments["parameters"] as? [String: Any] ?? [:]
+
+        AppEvents.shared.logProductItem(
+            id: itemId,
+            availability: availability,
+            condition: condition,
+            description: description,
+            imageLink: imageLink,
+            link: link,
+            title: title,
+            priceAmount: priceAmount,
+            currency: currency,
+            gtin: gtin,
+            mpn: mpn,
+            brand: brand,
+            parameters: parameters
+        )
+        result(nil)
+    }
+
+    private static func productAvailability(from token: String) -> AppEvents.ProductAvailability? {
+        switch token {
+        case "inStock": return .inStock
+        case "outOfStock": return .outOfStock
+        case "preorder": return .preOrder
+        case "availableForOrder": return .availableForOrder
+        case "discontinued": return .discontinued
+        default: return nil
+        }
+    }
+
+    private static func productCondition(from token: String) -> AppEvents.ProductCondition? {
+        switch token {
+        case "newItem": return .new
+        case "refurbished": return .refurbished
+        case "used": return .used
+        default: return nil
+        }
+    }
+
+    private func handleSetPushNotificationToken(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let token = call.arguments as? String else {
+            result(FlutterError(code: "INVALID_ARGUMENT", message: "Push notification token is required", details: nil))
+            return
+        }
+        // The ObjC `setPushNotificationsDeviceTokenString:` is renamed in Swift
+        // to `setPushNotificationsDeviceToken(_:)` via NS_SWIFT_NAME, overloaded
+        // with the Data variant. Passing a String resolves to the String overload;
+        // `setPushNotificationsDeviceTokenString` does not exist in Swift.
+        AppEvents.shared.setPushNotificationsDeviceToken(token)
+        result(nil)
+    }
+
+    private func handleSetFlushBehavior(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        let behavior: AppEvents.FlushBehavior = (call.arguments as? String) == "explicitOnly" ? .explicitOnly : .auto
+        AppEvents.shared.flushBehavior = behavior
+        result(nil)
+    }
+
+    private func handleGetFlushBehavior(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        switch AppEvents.shared.flushBehavior {
+        case .explicitOnly:
+            result("explicitOnly")
+        default:
+            result("auto")
+        }
+    }
+
+    private func handleGetUserData(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        result(AppEvents.shared.getUserData())
+    }
+
+    private func handleGetUserID(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        result(AppEvents.shared.userID)
+    }
+
+    private func handleClearUserDataForType(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let token = call.arguments as? String,
+              let type = Self.userDataType(from: token) else {
+            result(FlutterError(code: "INVALID_ARGUMENT", message: "A valid user data field is required", details: nil))
+            return
+        }
+        AppEvents.shared.clearUserData(forType: type)
+        result(nil)
+    }
+
+    private static func userDataType(from token: String) -> FBSDKAppEventUserDataType? {
+        switch token {
+        case "email": return .email
+        case "firstName": return .firstName
+        case "lastName": return .lastName
+        case "phone": return .phone
+        case "dateOfBirth": return .dateOfBirth
+        case "gender": return .gender
+        case "city": return .city
+        case "state": return .state
+        case "zip": return .zip
+        case "country": return .country
+        case "externalId": return .externalId
+        default: return nil
+        }
+    }
+
+    private func handleSetDebugLoggingEnabled(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        let enabled = call.arguments as? Bool ?? false
+        if enabled {
+            Settings.shared.enableLoggingBehavior(.appEvents)
+            Settings.shared.enableLoggingBehavior(.networkRequests)
+        } else {
+            Settings.shared.disableLoggingBehavior(.appEvents)
+            Settings.shared.disableLoggingBehavior(.networkRequests)
+        }
         result(nil)
     }
 }

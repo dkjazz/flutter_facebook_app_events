@@ -1,7 +1,18 @@
+// Copyright (c) Oddbit (https://oddbit.id)
+//
+// This source file is part of facebook_app_events.
+// Licensed under the Apache License, Version 2.0. See LICENSE and NOTICE.
+
 import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
+
+import 'src/enums.dart';
+
+export 'src/enums.dart';
+
+part 'src/standard_events.dart';
 
 /// MethodChannel name used by the plugin.
 const channelName = 'flutter.oddbit.id/facebook_app_events';
@@ -37,6 +48,18 @@ class FacebookAppEvents {
   static const eventNameStartTrial = "StartTrial";
   static const eventNameAdImpression = "AdImpression";
   static const eventNameAdClick = "AdClick";
+  static const eventNameAchievedLevel = "fb_mobile_level_achieved";
+  static const eventNameAddedPaymentInfo = "fb_mobile_add_payment_info";
+  static const eventNameCompletedTutorial = "fb_mobile_tutorial_completion";
+  static const eventNameSearched = "fb_mobile_search";
+  static const eventNameSpentCredits = "fb_mobile_spent_credits";
+  static const eventNameUnlockedAchievement = "fb_mobile_achievement_unlocked";
+  static const eventNameContact = "Contact";
+  static const eventNameCustomizeProduct = "CustomizeProduct";
+  static const eventNameDonate = "Donate";
+  static const eventNameFindLocation = "FindLocation";
+  static const eventNameSchedule = "Schedule";
+  static const eventNameSubmitApplication = "SubmitApplication";
 
   static const _paramNameValueToSum = "_valueToSum";
   static const paramNameAdType = "fb_ad_type";
@@ -45,6 +68,9 @@ class FacebookAppEvents {
   static const paramNameRegistrationMethod = "fb_registration_method";
   static const paramNamePaymentInfoAvailable = "fb_payment_info_available";
   static const paramNameNumItems = "fb_num_items";
+  static const paramNameLevel = "fb_level";
+  static const paramNameSearchString = "fb_search_string";
+  static const paramNameDescription = "fb_description";
   static const paramValueYes = "1";
   static const paramValueNo = "0";
 
@@ -78,7 +104,9 @@ class FacebookAppEvents {
   /// If you provide an [applicationId], the native SDK will be configured to
   /// log to that App ID instead of the default app id from platform config.
   /// (On iOS this uses `loggingOverrideAppID`; on Android it is passed to
-  /// `activateApp(Application, applicationId)`.)
+  /// `activateApp(Application, applicationId)`.) The override applies per
+  /// call: calling [activateApp] again without an [applicationId] reverts to
+  /// the default app id on both platforms.
   ///
   /// See documentation:
   /// - [iOS](https://developers.facebook.com/docs/reference/iossdk/current/FBSDKCoreKit/classes/fbsdkappevents.html)
@@ -105,6 +133,14 @@ class FacebookAppEvents {
   /// instance of an application. The user data will be persisted between
   /// application instances.
   ///
+  /// Merge semantics: only the fields you pass are updated; fields that are
+  /// `null` (or omitted) keep their previously-set value on both platforms.
+  /// To remove fields use [clearUserData] (all fields) or
+  /// [clearUserDataForType] (single field, iOS only).
+  ///
+  /// [externalId] is your own identifier for the user, used by Meta for
+  /// advanced matching (`extern_id`).
+  ///
   /// See documentation:
   /// - [iOS](https://developers.facebook.com/docs/reference/iossdk/current/FBSDKCoreKit/classes/fbsdkappevents.html)
   /// - [Android](https://developers.facebook.com/docs/reference/androidsdk/current/facebook/com/facebook/appevents/appeventslogger.html)
@@ -119,6 +155,7 @@ class FacebookAppEvents {
     String? state,
     String? zip,
     String? country,
+    String? externalId,
   }) {
     final args = <String, dynamic>{
       'email': email,
@@ -131,6 +168,7 @@ class FacebookAppEvents {
       'state': state,
       'zip': zip,
       'country': country,
+      'externalId': externalId,
     };
 
     return _channel.invokeMethod<void>('setUserData', _filterOutNulls(args));
@@ -156,7 +194,10 @@ class FacebookAppEvents {
 
   /// Returns the app ID this logger was configured to log to.
   ///
-  /// Note: on iOS, this plugin reads `FacebookAppID` from `Info.plist`.
+  /// Maps to `FacebookSdk.getApplicationId()` on Android and
+  /// `Settings.shared.appID` on iOS — both resolve the app id from platform
+  /// configuration (`AndroidManifest.xml` / `Info.plist`) and reflect any app
+  /// id set programmatically on the SDK.
   ///
   /// See documentation:
   /// - [iOS](https://developers.facebook.com/docs/ios/getting-started)
@@ -176,9 +217,14 @@ class FacebookAppEvents {
 
   /// Log an app event with the specified [name] and the supplied [parameters] value.
   ///
-  /// - [parameters] should contain only JSON-compatible values. On Android
-  ///   these values are converted into a `Bundle`, so supported types are
-  ///   limited to primitives (String/num/bool) and nested maps of the same.
+  /// The native SDKs only accept `String` and numeric parameter values; an
+  /// event containing any other value type is silently dropped by the SDK.
+  /// This method therefore accepts `String`, `num`, and `bool` values —
+  /// booleans are converted to `"1"`/`"0"` (Meta's yes/no convention, see
+  /// [paramValueYes]/[paramValueNo]) so the event is recorded identically on
+  /// both platforms. Any other value type (lists, maps, ...) throws an
+  /// [ArgumentError]; encode structured values as a JSON string first (as
+  /// Meta prescribes for [paramNameContent]).
   ///
   /// See documentation:
   /// - [iOS](https://developers.facebook.com/docs/reference/iossdk/current/FBSDKCoreKit/classes/fbsdkappevents.html)
@@ -194,7 +240,7 @@ class FacebookAppEvents {
     };
 
     if (parameters != null) {
-      args['parameters'] = _filterOutNulls(parameters);
+      args['parameters'] = _normalizeParameters(parameters);
     }
 
     return _channel.invokeMethod<void>('logEvent', _filterOutNulls(args));
@@ -214,7 +260,10 @@ class FacebookAppEvents {
       'action': action,
     };
 
-    return _channel.invokeMethod<void>('logPushNotificationOpen', args);
+    return _channel.invokeMethod<void>(
+      'logPushNotificationOpen',
+      _filterOutNulls(args),
+    );
   }
 
   /// Sets a user [id] to associate with all app events.
@@ -236,11 +285,16 @@ class FacebookAppEvents {
   /// See documentation:
   /// - [Standard events](https://developers.facebook.com/docs/app-events/best-practices#standard-events)
   /// - [Android constants](https://developers.facebook.com/docs/reference/androidsdk/current/facebook/com/facebook/appevents/appeventsconstants.html)
-  Future<void> logCompletedRegistration({String? registrationMethod}) {
+  Future<void> logCompletedRegistration({
+    String? registrationMethod,
+    Map<String, dynamic>? parameters,
+  }) {
     return logEvent(
       name: eventNameCompletedRegistration,
       parameters: {
-        paramNameRegistrationMethod: registrationMethod,
+        if (parameters != null) ...parameters,
+        if (registrationMethod != null)
+          paramNameRegistrationMethod: registrationMethod,
       },
     );
   }
@@ -250,14 +304,21 @@ class FacebookAppEvents {
   /// See documentation:
   /// - [Standard events](https://developers.facebook.com/docs/app-events/best-practices#standard-events)
   /// - [Android constants](https://developers.facebook.com/docs/reference/androidsdk/current/facebook/com/facebook/appevents/appeventsconstants.html)
-  Future<void> logRated({double? valueToSum}) {
+  Future<void> logRated({
+    double? valueToSum,
+    Map<String, dynamic>? parameters,
+  }) {
     return logEvent(
       name: eventNameRated,
       valueToSum: valueToSum,
+      parameters: parameters,
     );
   }
 
   /// Log this event when the user has viewed a form of content in the app.
+  ///
+  /// To be eligible for ad revenue optimization (ROAS), you should include the
+  /// [price] (as valueToSum) and [currency] parameters.
   ///
   /// See documentation:
   /// - [Standard events](https://developers.facebook.com/docs/app-events/best-practices#standard-events)
@@ -268,20 +329,25 @@ class FacebookAppEvents {
     String? type,
     String? currency,
     double? price,
+    Map<String, dynamic>? parameters,
   }) {
     return logEvent(
       name: eventNameViewedContent,
       parameters: {
-        paramNameContent: content != null ? json.encode(content) : null,
-        paramNameContentId: id,
-        paramNameContentType: type,
-        paramNameCurrency: currency,
+        if (parameters != null) ...parameters,
+        if (content != null) paramNameContent: json.encode(content),
+        if (id != null) paramNameContentId: id,
+        if (type != null) paramNameContentType: type,
+        if (currency != null) paramNameCurrency: currency,
       },
       valueToSum: price,
     );
   }
 
   /// Log this event when the user has added an item to cart.
+  ///
+  /// To be eligible for ad revenue optimization (ROAS), you should include the
+  /// [price] (as valueToSum) and [currency] parameters.
   ///
   /// See documentation:
   /// - [Standard events](https://developers.facebook.com/docs/app-events/best-practices#standard-events)
@@ -292,11 +358,13 @@ class FacebookAppEvents {
     required String type,
     required String currency,
     required double price,
+    Map<String, dynamic>? parameters,
   }) {
     return logEvent(
       name: eventNameAddedToCart,
       parameters: {
-        paramNameContent: content != null ? json.encode(content) : null,
+        if (parameters != null) ...parameters,
+        if (content != null) paramNameContent: json.encode(content),
         paramNameContentId: id,
         paramNameContentType: type,
         paramNameCurrency: currency,
@@ -307,6 +375,9 @@ class FacebookAppEvents {
 
   /// Log this event when the user has added an item to wishlist.
   ///
+  /// To be eligible for ad revenue optimization (ROAS), you should include the
+  /// [price] (as valueToSum) and [currency] parameters.
+  ///
   /// See documentation:
   /// - [Standard events](https://developers.facebook.com/docs/app-events/best-practices#standard-events)
   /// - [Android constants](https://developers.facebook.com/docs/reference/androidsdk/current/facebook/com/facebook/appevents/appeventsconstants.html)
@@ -316,11 +387,13 @@ class FacebookAppEvents {
     required String type,
     required String currency,
     required double price,
+    Map<String, dynamic>? parameters,
   }) {
     return logEvent(
       name: eventNameAddedToWishlist,
       parameters: {
-        paramNameContent: content != null ? json.encode(content) : null,
+        if (parameters != null) ...parameters,
+        if (content != null) paramNameContent: json.encode(content),
         paramNameContentId: id,
         paramNameContentType: type,
         paramNameCurrency: currency,
@@ -342,33 +415,50 @@ class FacebookAppEvents {
     return _channel.invokeMethod<void>('setAutoLogAppEventsEnabled', enabled);
   }
 
-  /// Sets data processing options (CCPA / limited data use).
+  /// Sets data processing options (CCPA / Limited Data Use).
   ///
-  /// Platform behavior:
-  /// - Android: calls the native `FacebookSdk.setDataProcessingOptions(...)`.
-  /// - iOS: the upstream iOS SDK removed this API in recent versions; this
-  ///   method currently performs no action on iOS.
+  /// Maps to `FacebookSdk.setDataProcessingOptions(options, country, state)`
+  /// on Android and `Settings.shared.setDataProcessingOptions(options,
+  /// country:state:)` on iOS.
+  ///
+  /// For example, to enable Limited Data Use with geolocation:
+  /// `setDataProcessingOptions(['LDU'], country: 0, state: 0)`. Passing an
+  /// empty [options] list disables Limited Data Use.
+  ///
+  /// [country] and [state] must fit in a signed 32-bit integer (the type the
+  /// native APIs take); a [RangeError] is thrown otherwise.
   ///
   /// See documentation:
   /// - https://developers.facebook.com/docs/development/data-processing-options
+  /// - [iOS Settings](https://developers.facebook.com/docs/reference/iossdk/current/FBSDKCoreKit/classes/settings.html)
   /// - [Android FacebookSdk](https://developers.facebook.com/docs/reference/androidsdk/current/facebook/com/facebook/FacebookSdk.html)
   Future<void> setDataProcessingOptions(
     List<String> options, {
     int? country,
     int? state,
   }) {
+    _checkFitsIn32Bits(country, 'country');
+    _checkFitsIn32Bits(state, 'state');
+
     final args = <String, dynamic>{
       'options': options,
       'country': country,
       'state': state,
     };
 
-    return _channel.invokeMethod<void>('setDataProcessingOptions', args);
+    return _channel.invokeMethod<void>(
+      'setDataProcessingOptions',
+      _filterOutNulls(args),
+    );
   }
 
   /// Logs a purchase event.
   ///
   /// [currency] should be an ISO 4217 currency code (for example: `"USD"`).
+  ///
+  /// [parameters] follows the same value-type rules as [logEvent]: `String`,
+  /// `num`, and `bool` (sent as `"1"`/`"0"`); other types throw an
+  /// [ArgumentError].
   ///
   /// See documentation:
   /// - [iOS](https://developers.facebook.com/docs/reference/iossdk/current/FBSDKCoreKit/classes/fbsdkappevents.html)
@@ -381,13 +471,16 @@ class FacebookAppEvents {
     final args = <String, dynamic>{
       'amount': amount,
       'currency': currency,
-      'parameters': parameters,
+      if (parameters != null) 'parameters': _normalizeParameters(parameters),
     };
     return _channel.invokeMethod<void>('logPurchase', _filterOutNulls(args));
   }
 
   /// Convenience wrapper around [logEvent] for the Initiated Checkout
   /// standard event.
+  ///
+  /// To be eligible for ad revenue optimization (ROAS), you should include the
+  /// [totalPrice] (as valueToSum) and [currency] parameters.
   ///
   /// See documentation:
   /// - https://developers.facebook.com/docs/app-events/best-practices#standard-events
@@ -398,15 +491,17 @@ class FacebookAppEvents {
     String? contentId,
     int? numItems,
     bool paymentInfoAvailable = false,
+    Map<String, dynamic>? parameters,
   }) {
     return logEvent(
       name: eventNameInitiatedCheckout,
       valueToSum: totalPrice,
       parameters: {
-        paramNameContentType: contentType,
-        paramNameContentId: contentId,
-        paramNameNumItems: numItems,
-        paramNameCurrency: currency,
+        if (parameters != null) ...parameters,
+        if (contentType != null) paramNameContentType: contentType,
+        if (contentId != null) paramNameContentId: contentId,
+        if (numItems != null) paramNameNumItems: numItems,
+        if (currency != null) paramNameCurrency: currency,
         paramNamePaymentInfoAvailable:
             paymentInfoAvailable ? paramValueYes : paramValueNo,
       },
@@ -415,19 +510,33 @@ class FacebookAppEvents {
 
   /// Sets advertiser tracking / advertiser ID collection flags.
   ///
-  /// KIDS APP COMPLIANCE: On iOS, this controls both Facebook SDK and
-  /// FBAudienceNetwork tracking settings to ensure full COPPA compliance.
+  /// Deprecated because the two flags it couples no longer exist as a pair on
+  /// either platform:
   ///
-  /// This typically needs to be aligned with your user consent flow and the
-  /// platform's privacy requirements.
+  /// - On iOS, `Settings.isAdvertiserTrackingEnabled` is deprecated since
+  ///   Facebook SDK v17: the SDK derives tracking consent from
+  ///   `ATTrackingManager.trackingAuthorizationStatus` and ignores this setter
+  ///   on iOS 17+. Request App Tracking Transparency authorization in your
+  ///   app instead.
+  /// - On Android, no tracking-enabled flag exists; only advertiser ID
+  ///   collection is configurable, and this method reduces to
+  ///   `setAdvertiserIDCollectionEnabled(enabled && collectId)`.
   ///
-  /// See documentation:
-  /// - [iOS Settings](https://developers.facebook.com/docs/reference/iossdk/current/FBSDKCoreKit/classes/settings.html)
-  /// - [Android FacebookSdk](https://developers.facebook.com/docs/reference/androidsdk/current/facebook/com/facebook/FacebookSdk.html)
+  /// Use [setAdvertiserIdCollectionEnabled] instead, which maps 1:1 to the
+  /// native setting on both platforms.
+  @Deprecated('Use setAdvertiserIdCollectionEnabled instead. On iOS the SDK '
+      'derives tracking consent from App Tracking Transparency, and on '
+      'Android only advertiser ID collection is configurable.')
   Future<void> setAdvertiserTracking({
     required bool enabled,
     bool collectId = true,
   }) {
+    if (enabled && collectId) {
+      throw UnsupportedError(
+        'Advertising ID collection is permanently disabled in the kids-app fork.',
+      );
+    }
+
     final args = <String, dynamic>{
       'enabled': enabled,
       'collectId': collectId,
@@ -436,7 +545,46 @@ class FacebookAppEvents {
     return _channel.invokeMethod<void>('setAdvertiserTracking', args);
   }
 
+  /// Keeps collection of the device advertiser ID disabled.
+  ///
+  /// This kids-app fork permanently disables IDFA/AAID collection. Passing
+  /// `true` throws [UnsupportedError]; passing `false` reinforces the native
+  /// privacy setting on both platforms.
+  ///
+  /// See documentation:
+  /// - [iOS Settings](https://developers.facebook.com/docs/reference/iossdk/current/FBSDKCoreKit/classes/settings.html)
+  /// - [Android FacebookSdk](https://developers.facebook.com/docs/reference/androidsdk/current/facebook/com/facebook/FacebookSdk.html)
+  Future<void> setAdvertiserIdCollectionEnabled(bool enabled) {
+    if (enabled) {
+      throw UnsupportedError(
+        'Advertising ID collection is permanently disabled in the kids-app fork.',
+      );
+    }
+
+    return _channel.invokeMethod<void>(
+      'setAdvertiserIdCollectionEnabled',
+      false,
+    );
+  }
+
+  /// Restricts logged event data from being used for purposes other than
+  /// analytics and conversions (e.g. targeting ads to the user).
+  ///
+  /// Maps to `FacebookSdk.setLimitEventAndDataUsage` (Android) and
+  /// `Settings.shared.isEventDataUsageLimited` (iOS). The setting is
+  /// persisted across app launches. Defaults to `false`.
+  ///
+  /// See documentation:
+  /// - [iOS Settings](https://developers.facebook.com/docs/reference/iossdk/current/FBSDKCoreKit/classes/settings.html)
+  /// - [Android FacebookSdk](https://developers.facebook.com/docs/reference/androidsdk/current/facebook/com/facebook/FacebookSdk.html)
+  Future<void> setLimitEventAndDataUsage(bool enabled) {
+    return _channel.invokeMethod<void>('setLimitEventAndDataUsage', enabled);
+  }
+
   /// The start of a paid subscription for a product or service you offer.
+  ///
+  /// To be eligible for ad revenue optimization (ROAS), you should include the
+  /// [price] (as valueToSum) and [currency] parameters.
   ///
   /// See documentation:
   /// - https://developers.facebook.com/docs/app-events/best-practices#standard-events
@@ -444,12 +592,14 @@ class FacebookAppEvents {
     double? price,
     String? currency,
     required String orderId,
+    Map<String, dynamic>? parameters,
   }) {
     return logEvent(
       name: eventNameSubscribe,
       valueToSum: price,
       parameters: {
-        paramNameCurrency: currency,
+        if (parameters != null) ...parameters,
+        if (currency != null) paramNameCurrency: currency,
         paramNameOrderId: orderId,
       },
     );
@@ -457,18 +607,23 @@ class FacebookAppEvents {
 
   /// The start of a free trial of a product or service you offer (example: trial subscription).
   ///
+  /// To be eligible for ad revenue optimization (ROAS), you should include the
+  /// [price] (as valueToSum) and [currency] parameters.
+  ///
   /// See documentation:
   /// - https://developers.facebook.com/docs/app-events/best-practices#standard-events
   Future<void> logStartTrial({
     double? price,
     String? currency,
     required String orderId,
+    Map<String, dynamic>? parameters,
   }) {
     return logEvent(
       name: eventNameStartTrial,
       valueToSum: price,
       parameters: {
-        paramNameCurrency: currency,
+        if (parameters != null) ...parameters,
+        if (currency != null) paramNameCurrency: currency,
         paramNameOrderId: orderId,
       },
     );
@@ -476,7 +631,23 @@ class FacebookAppEvents {
 
   /// Log this event when the user views an ad.
   ///
+  /// To track ad revenue for ROAS optimization, use [logEvent] directly with
+  /// [eventNameAdImpression], passing `valueToSum` (the ad revenue amount) and
+  /// [paramNameCurrency] in the parameters map:
+  ///
+  /// ```dart
+  /// logEvent(
+  ///   name: FacebookAppEvents.eventNameAdImpression,
+  ///   valueToSum: revenueAmount,
+  ///   parameters: {
+  ///     FacebookAppEvents.paramNameAdType: 'interstitial',
+  ///     FacebookAppEvents.paramNameCurrency: 'USD',
+  ///   },
+  /// );
+  /// ```
+  ///
   /// See documentation:
+  /// - https://developers.facebook.com/docs/app-events/guides/maximize-in-app-ad-revenue
   /// - https://developers.facebook.com/docs/app-events/best-practices#standard-events
   Future<void> logAdImpression({
     required String adType,
@@ -491,7 +662,23 @@ class FacebookAppEvents {
 
   /// Log this event when the user clicks an ad.
   ///
+  /// To track ad revenue for ROAS optimization, use [logEvent] directly with
+  /// [eventNameAdClick], passing `valueToSum` (the ad revenue amount) and
+  /// [paramNameCurrency] in the parameters map:
+  ///
+  /// ```dart
+  /// logEvent(
+  ///   name: FacebookAppEvents.eventNameAdClick,
+  ///   valueToSum: revenueAmount,
+  ///   parameters: {
+  ///     FacebookAppEvents.paramNameAdType: 'rewarded_video',
+  ///     FacebookAppEvents.paramNameCurrency: 'USD',
+  ///   },
+  /// );
+  /// ```
+  ///
   /// See documentation:
+  /// - https://developers.facebook.com/docs/app-events/guides/maximize-in-app-ad-revenue
   /// - https://developers.facebook.com/docs/app-events/best-practices#standard-events
   Future<void> logAdClick({
     required String adType,
@@ -504,10 +691,159 @@ class FacebookAppEvents {
     );
   }
 
+  /// Overrides the Graph API version used by the Facebook SDK.
+  ///
+  /// The plugin sets a default Graph API version at initialization because the
+  /// Facebook SDK v18.x ships with an outdated default that has been removed by
+  /// Meta. Call this as early as possible in app startup if you need a specific
+  /// version before using plugin features that may trigger Graph API requests.
+  ///
+  /// The [version] string must be in the form `"vX.Y"` (e.g. `"v24.0"`).
+  /// Refer to Meta's [Graph API changelog](https://developers.facebook.com/docs/graph-api/changelog/)
+  /// for currently supported versions.
+  ///
+  /// See documentation:
+  /// - [iOS Settings](https://developers.facebook.com/docs/reference/iossdk/current/FBSDKCoreKit/classes/settings.html)
+  /// - [Android FacebookSdk](https://developers.facebook.com/docs/reference/androidsdk/current/facebook/com/facebook/FacebookSdk.html)
+  Future<void> setGraphApiVersion(String version) {
+    return _channel.invokeMethod<void>('setGraphApiVersion', version);
+  }
+
+  /// Logs a product-catalog item so it can be matched for dynamic ads and
+  /// product-catalog audiences.
+  ///
+  /// At least one of [gtin], [mpn] or [brand] must be provided — this is a
+  /// requirement of the native SDK.
+  ///
+  /// See documentation:
+  /// - [iOS](https://developers.facebook.com/docs/reference/iossdk/current/FBSDKCoreKit/classes/fbsdkappevents.html)
+  /// - [Android](https://developers.facebook.com/docs/reference/androidsdk/current/facebook/com/facebook/appevents/appeventslogger.html)
+  Future<void> logProductItem({
+    required String itemId,
+    required ProductAvailability availability,
+    required ProductCondition condition,
+    required String description,
+    required String imageLink,
+    required String link,
+    required String title,
+    required double priceAmount,
+    required String currency,
+    String? gtin,
+    String? mpn,
+    String? brand,
+    Map<String, dynamic>? parameters,
+  }) {
+    assert(
+      gtin != null || mpn != null || brand != null,
+      'logProductItem requires at least one of gtin, mpn or brand.',
+    );
+
+    final args = <String, dynamic>{
+      'itemId': itemId,
+      'availability': availability.name,
+      'condition': condition.name,
+      'description': description,
+      'imageLink': imageLink,
+      'link': link,
+      'title': title,
+      'priceAmount': priceAmount,
+      'currency': currency,
+      'gtin': gtin,
+      'mpn': mpn,
+      'brand': brand,
+      if (parameters != null) 'parameters': _normalizeParameters(parameters),
+    };
+
+    return _channel.invokeMethod<void>(
+      'logProductItem',
+      _filterOutNulls(args),
+    );
+  }
+
+  /// Registers a push notification device [token] with the SDK so Meta can
+  /// attribute push-driven app opens and measure push campaigns.
+  ///
+  /// Platform mapping:
+  /// - iOS: `AppEvents.setPushNotificationsDeviceToken(_:)` (the String overload).
+  ///   The underlying `setPushNotificationsDeviceTokenString:` Objective-C
+  ///   selector is renamed to `setPushNotificationsDeviceToken(_:)` in Swift via
+  ///   `NS_SWIFT_NAME`, so that is the symbol this plugin calls.
+  /// - Android: `AppEventsLogger.setPushNotificationsRegistrationId`.
+  Future<void> setPushNotificationsDeviceToken(String token) {
+    return _channel.invokeMethod<void>(
+      'setPushNotificationsDeviceToken',
+      token,
+    );
+  }
+
+  /// Registers a push notification [token] with the SDK.
+  @Deprecated('Use setPushNotificationsDeviceToken instead, which follows the '
+      'native SDK naming.')
+  Future<void> setPushNotificationToken(String token) {
+    return setPushNotificationsDeviceToken(token);
+  }
+
+  /// Sets the [FlushBehavior] controlling when events are sent to Meta.
+  ///
+  /// Use [FlushBehavior.explicitOnly] to suppress automatic flushing and only
+  /// send events when [flush] is called.
+  Future<void> setFlushBehavior(FlushBehavior behavior) {
+    return _channel.invokeMethod<void>('setFlushBehavior', behavior.name);
+  }
+
+  /// Returns the current [FlushBehavior].
+  Future<FlushBehavior> getFlushBehavior() async {
+    final token = await _channel.invokeMethod<String>('getFlushBehavior');
+    return flushBehaviorFromWire(token);
+  }
+
+  /// Returns the JSON-encoded hashed user data currently set on the SDK, or
+  /// `null` if none has been set. See [setUserData].
+  Future<String?> getUserData() {
+    return _channel.invokeMethod<String>('getUserData');
+  }
+
+  /// Returns the user id previously set via [setUserID], or `null`.
+  Future<String?> getUserID() {
+    return _channel.invokeMethod<String>('getUserID');
+  }
+
+  /// Clears a single previously-set [field] of user data.
+  ///
+  /// Platform behavior:
+  /// - iOS: clears the given field via `clearUserDataForType`.
+  /// - Android: no-op. `AppEventsLogger` exposes no per-field clear; use
+  ///   [clearUserData] to clear all fields at once.
+  Future<void> clearUserDataForType(FacebookUserDataField field) {
+    return _channel.invokeMethod<void>('clearUserDataForType', field.name);
+  }
+
+  /// Enables or disables verbose Facebook SDK debug logging (app events and
+  /// network requests).
+  ///
+  /// This replaces the implicit debug-logging side effect that previously lived
+  /// in the deprecated `setAdvertiserTracking` on Android; call this explicitly
+  /// when you want SDK logs during development.
+  Future<void> setDebugLoggingEnabled(bool enabled) {
+    return _channel.invokeMethod<void>('setDebugLoggingEnabled', enabled);
+  }
+
   // ---------------------------------------------------------------------------
   // ---------------------------------------------------------------------------
   //
   // PRIVATE METHODS BELOW HERE
+
+  /// Throws a [RangeError] if [value] does not fit in a signed 32-bit integer.
+  ///
+  /// The standard method codec delivers larger Dart ints as 64-bit values,
+  /// which the native handlers cannot pass to SDK APIs typed as 32-bit ints.
+  static void _checkFitsIn32Bits(int? value, String name) {
+    const min = -0x80000000;
+    const max = 0x7FFFFFFF;
+    if (value != null && (value < min || value > max)) {
+      throw RangeError.range(value, min, max, name);
+    }
+  }
 
   /// Creates a new map containing all of the key/value pairs from [parameters]
   /// except those whose value is `null`.
@@ -519,5 +855,30 @@ class FacebookAppEvents {
       }
     });
     return filtered;
+  }
+
+  /// Normalizes event [parameters] to the value types accepted by the native
+  /// SDKs: drops `null` entries, keeps `String`/`num` values, converts `bool`
+  /// to `"1"`/`"0"`, and throws [ArgumentError] for anything else — the native
+  /// SDKs silently drop the whole event when given an unsupported value type.
+  Map<String, dynamic> _normalizeParameters(Map<String, dynamic> parameters) {
+    final Map<String, dynamic> normalized = <String, dynamic>{};
+    parameters.forEach((String key, dynamic value) {
+      if (value == null) {
+        return;
+      } else if (value is bool) {
+        normalized[key] = value ? paramValueYes : paramValueNo;
+      } else if (value is String || value is num) {
+        normalized[key] = value;
+      } else {
+        throw ArgumentError.value(
+          value,
+          key,
+          'App event parameter values must be String, num, or bool. '
+          'Encode structured values as a JSON string (json.encode) first.',
+        );
+      }
+    });
+    return normalized;
   }
 }
