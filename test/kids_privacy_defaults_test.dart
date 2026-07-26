@@ -66,6 +66,8 @@ void main() {
       final androidGradle = File('android/build.gradle').readAsStringSync();
       final podspec =
           File('ios/facebook_app_events.podspec').readAsStringSync();
+      final examplePodLock =
+          File('example/ios/Podfile.lock').readAsStringSync();
       final packageSwift = File(
         'ios/facebook_app_events/Package.swift',
       ).readAsStringSync();
@@ -76,11 +78,13 @@ void main() {
 
       expect(androidGradle, contains('facebook-android-sdk:18.3.0'));
       expect(podspec, contains("'FBSDKCoreKit', '18.1.0'"));
+      expect(examplePodLock, contains('FBSDKCoreKit (18.1.0)'));
       expect(
         packageSwift,
         contains('"18.0.0"..<"19.0.0"'),
       );
       expect(podspec, isNot(contains('FBAudienceNetwork')));
+      expect(examplePodLock, isNot(contains('FBAudienceNetwork')));
       expect(swiftBridge, isNot(contains('FBAudienceNetwork')));
     });
   });
